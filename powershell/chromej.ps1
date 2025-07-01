@@ -57,7 +57,7 @@ foreach ($arg in $args) {
 
 function Show-Help {
 @"
-chromej.ps1 - Windows 多开独立 Chrome 实例工具（支持多 profile、多参数、激活、删除、静默等）
+chromej.ps1 - Windows 多开独立 Chrome 实例工具
 
 【用途说明】
     一键多开 Chrome 独立配置实例；支持 profile 目录管理、进程激活、参数透传、批量删除、静默运行等高级场景。
