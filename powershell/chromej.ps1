@@ -188,7 +188,7 @@ Write-Host "------------------------------------------------------"
 
 try {
     Start-Process -FilePath $chromeExe -ArgumentList $chromeArgs
-    Write-Host "Chrome 启动成功！"
+    Write-Host "Chrome 启动成功！" -ForegroundColor Green
 } catch {
     Write-Host "Chrome 启动失败: $_" -ForegroundColor Red
     exit 4
