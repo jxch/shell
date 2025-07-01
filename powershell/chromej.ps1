@@ -34,9 +34,10 @@ chromej.ps1 - Windows 多开独立 Chrome 配置实例脚本（带 profile 删�
 【基本用法】
     .\chromej.ps1 <ProfileName> [-ChromePath <chrome.exe路径>] [-RootDir <配置根目录>] [-Url <网址>]
     .\chromej.ps1 <ProfileName> -Delete [-y]
+    .\chromej.ps1 [-ChromePath <chrome.exe路径>] [-Url <网址>]
 
 【参数说明】
-    ProfileName      必填。Profile 名称或编号（仅字母、数字、下划线、横线）。
+    ProfileName      可选。Profile 名称或编号（仅字母、数字、下划线、横线）。
     -ChromePath/-c   可选。手动指定 Chrome 可执行文件路径。
     -RootDir/-r      可选。Profile 配置根目录（默认 C:\ProgramData\chrome）。
     -Url/-u          可选。Chrome 启动时自动打开的网页。
@@ -51,6 +52,8 @@ chromej.ps1 - Windows 多开独立 Chrome 配置实例脚本（带 profile 删�
     .\chromej.ps1 1 -Delete
     .\chromej.ps1 1 -Delete -y
     .\chromej.ps1 -Help
+    .\chromej.ps1 -ChromePath "D:\chrome\chrome.exe" -Url "https://example.com"
+    .\chromej.ps1 -Url "https://example.com"
 
 【功能扩展】
     - 自动查找常规 Chrome 路径
@@ -64,12 +67,49 @@ chromej.ps1 - Windows 多开独立 Chrome 配置实例脚本（带 profile 删�
 "@ | Write-Host
 }
 
-if ($Help -or !$ProfileName) {
+if ($Help) {
     Show-Help
     exit 0
 }
 
-if ($ProfileName -notmatch '^[\w\-]+$') {
+$chromeCandidates = @(
+    $ChromePath,
+    "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
+    "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+    "${env:LocalAppData}\Google\Chrome\Application\chrome.exe"
+)
+
+$chromeExe = $null
+foreach ($path in $chromeCandidates) {
+    if ($path -and (Test-Path $path)) {
+        $chromeExe = $path
+        break
+    }
+}
+if (-not $chromeExe) {
+    Write-Host "未找到 Chrome（chrome.exe），请用 -ChromePath 参数指定。" -ForegroundColor Red
+    exit 2
+}
+
+# 如果没有ProfileName且没有-Delete参数，直接启动chrome.exe（支持 -ChromePath 和 -Url）
+if (-not $ProfileName -and -not $Delete) {
+    Write-Host "未指定 ProfileName，直接启动 Chrome 本体。"
+    try {
+        if ($Url) {
+            Write-Host "启动网址 : $Url"
+            Start-Process -FilePath $chromeExe -ArgumentList $Url
+        } else {
+            Start-Process -FilePath $chromeExe
+        }
+        Write-Host "已启动 Chrome。"
+    } catch {
+        Write-Host "Chrome 启动失败: $_" -ForegroundColor Red
+        exit 4
+    }
+    exit 0
+}
+
+if ($ProfileName -and ($ProfileName -notmatch '^[\w\-]+$')) {
     Write-Host "Profile 名称只能使用字母、数字、下划线、横线。" -ForegroundColor Red
     exit 1
 }
@@ -77,8 +117,7 @@ if ($ProfileName -notmatch '^[\w\-]+$') {
 $profileDir = Join-Path -Path $RootDir -ChildPath $ProfileName
 
 if ($Delete) {
-    if (Test-Path $profileDir) {
-        # 检查是否有进程在用这个profile
+    if ($ProfileName -and (Test-Path $profileDir)) {
         $usedBy = Get-CimInstance Win32_Process | Where-Object {
             $_.Name -match 'chrome\.exe' -and $_.CommandLine -match [regex]::Escape($profileDir)
         }
@@ -105,7 +144,6 @@ if ($Delete) {
                 Remove-Item -Path $profileDir -Recurse -Force -ErrorAction Stop
                 Write-Host "已删除: $profileDir" -ForegroundColor Green
             } catch {
-                # 递归检查未能删除的文件
                 $remaining = Get-ChildItem -Path $profileDir -Recurse -Force -ErrorAction SilentlyContinue
                 if ($remaining) {
                     Write-Host "部分文件/目录未能删除，可能被占用：" -ForegroundColor Red
@@ -117,30 +155,12 @@ if ($Delete) {
                 exit 5
             }
         }
+    } elseif (-not $ProfileName) {
+        Write-Host "未指定 ProfileName，无需删除 profile 目录。" -ForegroundColor Yellow
     } else {
         Write-Host "目录不存在: $profileDir" -ForegroundColor Yellow
     }
     exit 0
-}
-
-# 查找 Chrome 可执行文件
-$chromeCandidates = @(
-    $ChromePath,
-    "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
-    "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
-    "${env:LocalAppData}\Google\Chrome\Application\chrome.exe"
-)
-
-$chromeExe = $null
-foreach ($path in $chromeCandidates) {
-    if ($path -and (Test-Path $path)) {
-        $chromeExe = $path
-        break
-    }
-}
-if (-not $chromeExe) {
-    Write-Host "未找到 Chrome（chrome.exe），请用 -ChromePath 参数指定。" -ForegroundColor Red
-    exit 2
 }
 
 if (-not (Test-Path $profileDir)) {
