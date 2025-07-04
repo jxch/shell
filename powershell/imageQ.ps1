@@ -6,7 +6,7 @@
 .DESCRIPTION
     本脚本通过自动调整图片的压缩质量，将一张或多张图片压缩到目标大小以下，
     支持自定义初始画质、最小画质、目标大小（支持 B/KB/MB/GB 单位），
-    并自动检测是否安装 ImageMagick。
+    并自动检测是否安装 ImageMagick，并支持静默模式和彩色控制台输出。
 
 .PARAMETER InputFile
     （必需）要压缩的图片文件路径/路径数组。可用 -i 或 -InputFile 指定。
@@ -24,6 +24,9 @@
 .PARAMETER MinQuality
     （可选）最低画质（1-100），默认 60。可用 -mq 或 -MinQuality 指定。
 
+.PARAMETER Silent
+    （可选）静默模式，屏蔽所有控制台输出，仅保留错误。可用 -slt 或 -Silent 指定。
+
 .EXAMPLE
     .\imageQ.ps1 -i photo1.jpg,photo2.png
 
@@ -32,6 +35,9 @@
 
 .EXAMPLE
     .\imageQ.ps1 -i .\*.jpg -s 1500KB -q 88
+
+.EXAMPLE
+    .\imageQ.ps1 -i .\*.png -Silent
 
 .NOTES
     如未安装 ImageMagick，请先执行：
@@ -59,6 +65,10 @@ param(
     [Parameter(Mandatory=$false, HelpMessage="最低画质（1-100），默认60")]
     [int]$MinQuality = 60,
 
+    [Alias('slt')]
+    [Parameter(Mandatory=$false, HelpMessage="静默模式，屏蔽所有控制台输出，仅保留错误")]
+    [switch]$Silent,
+
     [Alias('?', '/?', '/h')]
     [Switch]$Help
 )
@@ -67,7 +77,7 @@ $helpText = @"
 imageQ.ps1 - 批量或单独压缩图片到指定大小（需 ImageMagick）
 
 【语法】
-    .\imageQ.ps1 -i <输入图片> [-o <输出图片>] [-s <目标大小>] [-q <初始画质>] [-mq <最低画质>]
+    .\imageQ.ps1 -i <输入图片> [-o <输出图片>] [-s <目标大小>] [-q <初始画质>] [-mq <最低画质>] [-Silent]
     .\imageQ.ps1 -? | -Help
 
 【参数说明】
@@ -76,12 +86,14 @@ imageQ.ps1 - 批量或单独压缩图片到指定大小（需 ImageMagick）
     -s, -TargetSize  (可选)   目标压缩大小，支持 B/KB/MB/GB，如 2MB、1800KB，默认4MB
     -q, -Quality     (可选)   初始画质，1-100，默认95
     -mq, -MinQuality (可选)   最低画质，1-100，默认60
+    -Silent, -slt    (可选)   静默模式，仅保留错误输出
     -?, -Help        (可选)   显示本帮助信息
 
 【示例】
     .\imageQ.ps1 -i .\*.jpg
     .\imageQ.ps1 -i img1.jpg,img2.png -s 2MB
     .\imageQ.ps1 -i img1.jpg,img2.jpg -o out1.jpg,out2.jpg -q 90
+    .\imageQ.ps1 -i .\*.png -Silent
     .\imageQ.ps1 -Help
 
 【注意】
@@ -90,8 +102,29 @@ imageQ.ps1 - 批量或单独压缩图片到指定大小（需 ImageMagick）
 "@
 
 if ($Help -or !$InputFile) {
-    Write-Host $helpText
+    Write-Host $helpText -ForegroundColor Cyan
     exit 0
+}
+
+function Write-Info {
+    param([string]$msg)
+    if (-not $Silent) { Write-Host $msg -ForegroundColor White }
+}
+function Write-Success {
+    param([string]$msg)
+    if (-not $Silent) { Write-Host $msg -ForegroundColor Green }
+}
+function Write-WarningColor {
+    param([string]$msg)
+    if (-not $Silent) { Write-Host $msg -ForegroundColor Yellow }
+}
+function Write-Title {
+    param([string]$msg)
+    if (-not $Silent) { Write-Host $msg -ForegroundColor Cyan }
+}
+function Write-ErrorColor {
+    param([string]$msg)
+    Write-Host $msg -ForegroundColor Red
 }
 
 function Convert-ToBytes {
@@ -117,7 +150,7 @@ function Convert-ToBytes {
 function Test-ImageMagickInstalled {
     $null = & magick -version 2>$null
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "未检测到 ImageMagick，请先安装：winget install ImageMagick.ImageMagick"
+        Write-WarningColor "未检测到 ImageMagick，请先安装：winget install ImageMagick.ImageMagick"
         exit 1
     }
 }
@@ -143,7 +176,7 @@ function Compress-Image {
         & magick "$InputFile" -quality $currentQuality "$TempFile"
         $FileSize = (Get-Item "$TempFile").Length
 
-        Write-Host "【$InputFile】尝试质量: $currentQuality, 文件大小: $([math]::Round($FileSize / 1MB, 2)) MB"
+        Write-Info "【$InputFile】尝试质量: $currentQuality, 文件大小: $([math]::Round($FileSize / 1MB, 2)) MB"
 
         if ($FileSize -gt $TargetBytes -and $currentQuality -gt $MinQuality) {
             $currentQuality -= $step
@@ -154,7 +187,7 @@ function Compress-Image {
     } while ($true)
 
     Move-Item "$TempFile" "$OutputFile" -Force
-    Write-Host "【$InputFile】压缩完成: $OutputFile, 最终质量: $currentQuality, 文件大小: $([math]::Round((Get-Item $OutputFile).Length/1MB,2)) MB"
+    Write-Success "【$InputFile】压缩完成: $OutputFile, 最终质量: $currentQuality, 文件大小: $([math]::Round((Get-Item $OutputFile).Length/1MB,2)) MB"
 }
 
 try {
@@ -174,19 +207,19 @@ try {
 
     for ($i=0; $i -lt $InputFile.Count; $i++) {
         try {
-            Write-Host "`n========== [$(($i+1))/${($InputFile.Count)}] =========="
-            Write-Host "输入文件: $($InputFile[$i])"
-            Write-Host "输出文件: $($OutputFile[$i])"
-            Write-Host "目标大小: $TargetSize ($TargetBytes 字节)"
-            Write-Host "初始画质: $Quality"
-            Write-Host "最低画质: $MinQuality"
+            Write-Title "`n========== [$(($i+1))/${($InputFile.Count)}] =========="
+            Write-Info "输入文件: $($InputFile[$i])"
+            Write-Info "输出文件: $($OutputFile[$i])"
+            Write-Info "目标大小: $TargetSize ($TargetBytes 字节)"
+            Write-Info "初始画质: $Quality"
+            Write-Info "最低画质: $MinQuality"
             Compress-Image -InputFile $InputFile[$i] -OutputFile $OutputFile[$i] -TargetBytes $TargetBytes -Quality $Quality -MinQuality $MinQuality
         }
         catch {
-            Write-Error "处理文件 $($InputFile[$i]) 时出错：$($_.Exception.Message)"
+            Write-ErrorColor "处理文件 $($InputFile[$i]) 时出错：$($_.Exception.Message)"
         }
     }
 }
 catch {
-    Write-Error $_.Exception.Message
+    Write-ErrorColor $_.Exception.Message
 }
